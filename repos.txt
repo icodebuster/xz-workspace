@@ -1,0 +1,8 @@
+# The project repos setup.sh clones into this workspace.
+# One per line: <folder name> <clone URL>. Lines starting with # are ignored.
+
+Axis-ERP            git@github.com:xzibit-apps/Axis-ERP.git
+Axis-Docs           git@github.com:xzibit-apps/Axis-Docs.git
+Axis-UI-Testing     git@github.com:icodebuster/Axis-UI-Testing.git
+Axis-UI-Reference   git@github.com:icodebuster/Axis-UI-Reference.git
+WhipIT              git@github.com:icodebuster/xz-whipit.git

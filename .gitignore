@@ -1,0 +1,15 @@
+# The project repos: each is its own git repo, cloned here by setup.sh
+/Axis-ERP/
+/Axis-Docs/
+/Axis-UI-Testing/
+/Axis-UI-Reference/
+/WhipIT/
+
+# Scratch area, never committed
+/_handoff/
+
+# Personal Claude Code settings for this machine
+.claude/settings.local.json
+
+# macOS
+.DS_Store

@@ -1,0 +1,24 @@
+{
+	"folders": [
+		{
+			"name": "Xzibit_Workspace",
+			"path": "."
+		},
+		{
+			"path": "Axis-Docs"
+		},
+		{
+			"path": "Axis-UI-Testing"
+		},
+		{
+			"path": "WhipIT"
+		},
+		{
+			"path": "Axis-ERP"
+		},
+		{
+			"path": "Axis-UI-Reference"
+		}
+	],
+	"settings": {}
+}

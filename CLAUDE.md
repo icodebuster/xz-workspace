@@ -17,7 +17,7 @@ Each folder's own `CLAUDE.md` is the authority for that folder. This file is onl
 
 ## Before acting in a folder
 
-- Read that folder's `CLAUDE.md` rules first. The hard ones, in short (the folder's file has the detail):
+- A folder's `CLAUDE.md` loads by itself the first time you read a file in that folder. Before acting in a folder where you haven't read anything yet, read its `CLAUDE.md` first, and don't read it again if it's already loaded. The hard rules, in short (the folder's file has the detail):
   - `WhipIT/`: scripts hit PRODUCTION unless `WHIPIT_ENV=dev`. One request at a time, no retries, big pulls only after 5pm Brisbane or at weekends.
   - `Axis-UI-Testing/`: plain `npm test` is safe. Saving runs only on axis-dev, picked with `--case` or `--screen`. Never email a quote.
   - `Axis-Docs/`: change files with Edit and Write only, never shell commands. Publish with `/publish-confluence`, never copy and paste.

@@ -1,6 +1,6 @@
 # Xzibit_Workspace
 
-This folder holds the Axis repos side by side so one Claude session can work across them. The folder itself is a small git repo (`icodebuster/xzibit-workspace`) that tracks only this file, `.claude/settings.json`, `.gitignore`, `repos.txt`, `setup.sh`, `README.md`, `Xzibit_Workspace.code-workspace` and `.vscode/settings.json`. Each project folder is its own git repo, ignored here, with its own `CLAUDE.md`, which loads when Claude first reads a file in that folder.
+This folder holds the Axis repos side by side so one Claude session can work across them. The folder itself is a small git repo (`icodebuster/xzibit-workspace`) that tracks only this file, `.claude/settings.json`, `.gitignore`, `repos.txt`, `setup.sh`, `README.md`, `Xzibit_Workspace.code-workspace`, `.vscode/settings.json`, the workspace skills in `.claude/skills/` and the `Axis-Sonar/` setup (not its token, lock or reports). Each project folder is its own git repo, ignored here, with its own `CLAUDE.md`, which loads when Claude first reads a file in that folder.
 
 Each folder's own `CLAUDE.md` is the authority for that folder. This file is only the map and the cross-folder rules: never copy a folder's rules up here, point to them.
 
@@ -13,6 +13,7 @@ Each folder's own `CLAUDE.md` is the authority for that folder. This file is onl
 | `Axis-UI-Testing/` | Playwright UI tests for axis-dev | `icodebuster/Axis-UI-Testing` | Write and run, following its Rules section |
 | `Axis-UI-Reference/` | Axis UI prototype (Vue) and UI kit: the reference for expected UI | see `repos.txt` | Read only unless asked |
 | `WhipIT/` | WhipIT 3 tooling, Atlas and WhipIT to Axis migration docs | `icodebuster/xz-whipit` | Write, following `WhipIT/CLAUDE.md` |
+| `Axis-Sonar/` | Local SonarQube for `Axis-ERP/`: `bin/sonar scan` analyses it from outside without editing it. Run with `/scan-code`. See its `README.md` | this workspace repo (`.env.sonar`, `Gemfile.lock` and `reports/` ignored) | Write and run. Never read, print or copy its `.env.sonar` |
 | `_handoff/` | Files passed between folders (route lists, change summaries, test summaries) | not in git | Write. Nothing secret, no client details |
 
 ## Before acting in a folder

@@ -8,6 +8,12 @@
 # Scratch area, never committed
 /_handoff/
 
+# Local SonarQube for Axis-ERP: the setup is tracked, but never the token,
+# the lock bin/sonar rebuilds on every run, or scan output
+/Axis-Sonar/.env.sonar
+/Axis-Sonar/Gemfile.lock
+/Axis-Sonar/reports/
+
 # Personal Claude Code settings for this machine
 .claude/settings.local.json
 

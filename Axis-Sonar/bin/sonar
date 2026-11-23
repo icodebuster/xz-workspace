@@ -1,0 +1,256 @@
+#!/usr/bin/env bash
+# SonarQube (Community Build) for Axis: run the server, analyse ../Axis-ERP.
+#
+#   bin/sonar up                 start the local server (http://localhost:9000)
+#   bin/sonar setup              one-off: admin password, project, token -> .env.sonar
+#   bin/sonar scan [--system] [--skip-tests]
+#                                reports below, then send the analysis
+#   bin/sonar reports [--system] [--skip-tests]
+#                                only write the reports SonarQube imports:
+#                                  reports/coverage/coverage.json  (tests)
+#                                  reports/rubocop.json            (RuboCop)
+#                                  reports/brakeman.json           (Brakeman)
+#   bin/sonar token NAME         print a new analysis token
+#   bin/sonar open               open the project dashboard
+#   bin/sonar logs               follow the server log
+#   bin/sonar down               stop the server (analyses are kept)
+#
+#   --system      run the system tests too (bin/rails test:all, needs Chrome)
+#   --skip-tests  reuse the coverage already in reports/coverage/
+#
+# Axis-ERP is never edited: every Ruby command runs inside it with
+# BUNDLE_GEMFILE pointing at this folder's Gemfile (Axis-ERP's plus SimpleCov),
+# and SimpleCov is loaded from coverage.rb, not from Axis-ERP's test_helper.
+# Another checkout can be analysed with AXIS_DIR=/path/to/axis bin/sonar scan.
+#
+# Env (read from .env.sonar): SONAR_HOST_URL, SONAR_TOKEN.
+# Needs: Docker (OrbStack), brew install sonar-scanner, Axis-ERP's Ruby (rbenv).
+# Full guide: README.md
+set -euo pipefail
+cd "$(dirname "$0")/.."
+DIR="$PWD"
+AXIS="$(cd "${AXIS_DIR:-$DIR/../Axis-ERP}" && pwd)"
+
+COMPOSE=(docker compose -f "$DIR/compose.yml")
+PROJECT_KEY="xzibit-axis"
+ENV_FILE="$DIR/.env.sonar"
+REPORTS="$DIR/reports"
+
+if [[ -f "$ENV_FILE" ]]; then
+  set -a; source "$ENV_FILE"; set +a
+fi
+SONAR_HOST_URL="${SONAR_HOST_URL:-http://localhost:${SONAR_PORT:-9000}}"
+
+say()  { echo "→ $*"; }
+warn() { echo "! $*" >&2; }
+die()  { echo "✗ $*" >&2; exit 1; }
+
+server_status() {
+  curl -sf "$SONAR_HOST_URL/api/system/status" 2>/dev/null | ruby -rjson -e 'puts JSON.parse(STDIN.read)["status"]' 2>/dev/null || echo "DOWN"
+}
+
+wait_until_up() {
+  local status
+  for _ in $(seq 1 90); do
+    status="$(server_status)"
+    [[ "$status" == "UP" ]] && return 0
+    sleep 2
+  done
+  die "SonarQube at $SONAR_HOST_URL is not up (last status: $status). See: bin/sonar logs"
+}
+
+# Web API call as a user. The credentials go to curl on stdin, never on the
+# command line where `ps` would show them.
+api() {
+  local user="$1" pass="$2"; shift 2
+  local esc="${pass//\\/\\\\}"; esc="${esc//\"/\\\"}"
+  printf 'user = "%s:%s"\n' "$user" "$esc" | curl -sS -K - "$@"
+}
+
+json() { ruby -rjson -e "j = (JSON.parse(STDIN.read) rescue exit(1)); puts($1)"; }
+
+# Runs a command inside Axis-ERP (so rbenv picks its .ruby-version) with this
+# folder's Gemfile, so Axis-ERP's Gemfile.lock is never rewritten.
+in_axis() { (cd "$AXIS" && BUNDLE_GEMFILE="$DIR/Gemfile" "$@"); }
+
+# Gemfile.lock here starts as a copy of Axis-ERP's, so the gems match main
+# exactly; bundle install then only adds SimpleCov and this Mac's platform.
+sync_gems() {
+  [[ -f "$AXIS/Gemfile.lock" ]] || die "No Gemfile.lock in $AXIS."
+  cp "$AXIS/Gemfile.lock" "$DIR/Gemfile.lock"
+  say "Gems (Axis-ERP's, plus SimpleCov) …"
+  in_axis bundle install --quiet || die "bundle install failed (is Axis-ERP's Ruby installed? rbenv install -s \$(cat $AXIS/.ruby-version))"
+}
+
+# --- server --------------------------------------------------------------------
+
+cmd_up() {
+  command -v docker >/dev/null || die "Docker isn't installed."
+  docker info >/dev/null 2>&1 || die "Docker isn't running (start OrbStack)."
+  say "Starting SonarQube (first boot takes a minute or two) …"
+  "${COMPOSE[@]}" up -d
+  wait_until_up
+  say "SonarQube is up at $SONAR_HOST_URL"
+  [[ -n "${SONAR_TOKEN:-}" ]] || echo "  Next: bin/sonar setup"
+}
+
+cmd_down() { "${COMPOSE[@]}" stop; }
+cmd_logs() { "${COMPOSE[@]}" logs -f sonarqube; }
+cmd_open() { open "$SONAR_HOST_URL/dashboard?id=$PROJECT_KEY"; }
+
+# --- setup ---------------------------------------------------------------------
+
+# Signs in as admin, leaving the password in ADMIN_PASSWORD. A fresh server
+# still has admin/admin, which SonarQube makes you replace before anything else.
+admin_sign_in() {
+  if [[ "$(api admin admin "$SONAR_HOST_URL/api/authentication/validate" | json 'j["valid"]')" == "true" ]]; then
+    say "The admin password is still the default. Choose a new one"
+    echo "  (at least 12 characters with an upper case letter, a lower case letter, a digit and a symbol)."
+    local first second
+    read -rsp "  New admin password: " first; echo
+    read -rsp "  Again: " second; echo
+    [[ "$first" == "$second" ]] || die "The two passwords differ."
+    api admin admin -f -X POST "$SONAR_HOST_URL/api/users/change_password" \
+      --data-urlencode "login=admin" --data-urlencode "previousPassword=admin" \
+      --data-urlencode "password=$first" >/dev/null \
+      || die "SonarQube refused that password (see the rules above)."
+    ADMIN_PASSWORD="$first"
+    say "Admin password changed. Keep it in your password manager."
+  else
+    ADMIN_PASSWORD="${SONAR_ADMIN_PASSWORD:-}"
+    [[ -n "$ADMIN_PASSWORD" ]] || { read -rsp "  SonarQube admin password: " ADMIN_PASSWORD; echo; }
+    [[ "$(api admin "$ADMIN_PASSWORD" "$SONAR_HOST_URL/api/authentication/validate" | json 'j["valid"]')" == "true" ]] \
+      || die "That isn't the admin password."
+  fi
+}
+
+new_token() {
+  local name="$1"
+  api admin "$ADMIN_PASSWORD" -f -X POST "$SONAR_HOST_URL/api/user_tokens/generate" \
+    --data-urlencode "name=$name" --data-urlencode "type=PROJECT_ANALYSIS_TOKEN" \
+    --data-urlencode "projectKey=$PROJECT_KEY" | json 'j["token"]' \
+    || die "Couldn't create token \"$name\" (a token with that name may already exist)."
+}
+
+cmd_setup() {
+  [[ "$(server_status)" == "UP" ]] || die "SonarQube isn't up at $SONAR_HOST_URL. Start it with: bin/sonar up"
+  admin_sign_in
+
+  if [[ "$(api admin "$ADMIN_PASSWORD" "$SONAR_HOST_URL/api/projects/search?projects=$PROJECT_KEY" | json 'j["components"].size')" == "0" ]]; then
+    say "Creating project $PROJECT_KEY (main branch: main) …"
+    api admin "$ADMIN_PASSWORD" -f -X POST "$SONAR_HOST_URL/api/projects/create" \
+      --data-urlencode "project=$PROJECT_KEY" --data-urlencode "name=Axis" \
+      --data-urlencode "mainBranch=main" >/dev/null
+  else
+    say "Project $PROJECT_KEY already exists."
+  fi
+
+  # Community Build analyses one branch, so "new code" is whatever changed
+  # in the last 30 days; the quality gate judges that.
+  say "New code = the last 30 days …"
+  api admin "$ADMIN_PASSWORD" -f -X POST "$SONAR_HOST_URL/api/new_code_periods/set" \
+    --data-urlencode "project=$PROJECT_KEY" --data-urlencode "type=NUMBER_OF_DAYS" \
+    --data-urlencode "value=30" >/dev/null
+
+  local token
+  token="$(new_token "local-$(whoami)-$(date +%Y%m%d%H%M%S)")"
+  umask 077
+  cat > "$ENV_FILE" <<EOF
+# SonarQube analysis token for bin/sonar. Written by bin/sonar setup; never commit.
+SONAR_HOST_URL=$SONAR_HOST_URL
+SONAR_TOKEN=$token
+EOF
+  say "Analysis token saved to $ENV_FILE."
+  echo "  Next: bin/sonar scan"
+}
+
+cmd_token() {
+  local name="${1:-}"
+  [[ -n "$name" ]] || die "Give the token a name, e.g. bin/sonar token mac-mini"
+  [[ "$(server_status)" == "UP" ]] || die "SonarQube isn't up at $SONAR_HOST_URL."
+  admin_sign_in
+  new_token "$name"
+}
+
+# --- analysis ------------------------------------------------------------------
+
+cmd_reports() {
+  local system=false skip_tests=false
+  for arg in "$@"; do
+    case "$arg" in
+      --system) system=true ;;
+      --skip-tests) skip_tests=true ;;
+      *) die "Unknown option: $arg" ;;
+    esac
+  done
+  mkdir -p "$REPORTS"
+  say "Analysing $AXIS at $(git -C "$AXIS" log -1 --format='%h (%ad) %s' --date=short)"
+  [[ -z "$(git -C "$AXIS" status --porcelain --untracked-files=no)" ]] \
+    || warn "Axis-ERP has uncommitted changes; they're analysed too and count as new code."
+  sync_gems
+
+  if $skip_tests; then
+    [[ -f "$REPORTS/coverage/coverage.json" ]] || die "No reports/coverage/coverage.json to reuse. Run without --skip-tests."
+    say "Reusing coverage from $(date -r "$REPORTS/coverage/coverage.json" '+%-d %b %Y, %-I:%M %p')."
+  else
+    rm -rf "$REPORTS/coverage"
+    local task="test"
+    $system && task="test:all"
+    say "Tests with coverage (bin/rails $task) …"
+    # A failing test still leaves good coverage for everything else, so it
+    # warns, not stops.
+    in_axis env SONAR_COVERAGE_DIR="$REPORTS/coverage" \
+      ruby -rbundler/setup -r"$DIR/coverage.rb" bin/rails "$task" \
+      || warn "Some tests failed; coverage is from the tests that ran."
+    [[ -f "$REPORTS/coverage/coverage.json" ]] || die "The test run wrote no reports/coverage/coverage.json."
+  fi
+
+  say "RuboCop …"
+  # 1 means offenses (they're the report); 2 means RuboCop itself failed.
+  local status=0
+  in_axis bin/rubocop --format json --out "$REPORTS/rubocop.json" --format offenses || status=$?
+  [[ $status -le 1 ]] || die "RuboCop failed (exit $status)."
+
+  say "Brakeman …"
+  # Not bin/brakeman: it forces --ensure-latest, which writes no report at all
+  # whenever a newer Brakeman is out.
+  in_axis bundle exec brakeman --quiet --no-pager --no-exit-on-warn --no-exit-on-error \
+    --format sonar --output "$REPORTS/brakeman.json"
+
+  say "Reports ready in $REPORTS"
+}
+
+cmd_scan() {
+  [[ -n "${SONAR_TOKEN:-}" ]] || die "No SONAR_TOKEN. Run bin/sonar setup first (or set it in $ENV_FILE)."
+  [[ "$(server_status)" == "UP" ]] || die "SonarQube isn't up at $SONAR_HOST_URL. Start it with: bin/sonar up"
+  command -v sonar-scanner >/dev/null || die "Install the scanner first: brew install sonar-scanner"
+  cmd_reports "$@"
+  say "Sending the analysis to $SONAR_HOST_URL …"
+  (cd "$AXIS" && SONAR_HOST_URL="$SONAR_HOST_URL" sonar-scanner \
+    -Dproject.settings="$DIR/sonar-project.properties" \
+    -Dsonar.projectBaseDir="$AXIS" \
+    -Dsonar.working.directory="$REPORTS/scannerwork" \
+    -Dsonar.ruby.coverage.reportPaths="$REPORTS/coverage/coverage.json" \
+    -Dsonar.ruby.rubocop.reportPaths="$REPORTS/rubocop.json" \
+    -Dsonar.externalIssuesReportPaths="$REPORTS/brakeman.json" \
+    -Dsonar.qualitygate.wait=true) \
+    || warn "The analysis finished with the quality gate failing, or the scanner failed (see above)."
+  say "Dashboard: $SONAR_HOST_URL/dashboard?id=$PROJECT_KEY"
+}
+
+# --- dispatch ------------------------------------------------------------------
+
+command="${1:-help}"
+shift || true
+case "$command" in
+  up) cmd_up ;;
+  down) cmd_down ;;
+  logs) cmd_logs ;;
+  open) cmd_open ;;
+  setup) cmd_setup ;;
+  token) cmd_token "$@" ;;
+  reports) cmd_reports "$@" ;;
+  scan) cmd_scan "$@" ;;
+  help|-h|--help) sed -n '2,/^[^#]/p' "$0" | sed -n 's/^# \{0,1\}//p' ;;
+  *) die "Unknown command: $command (bin/sonar help)" ;;
+esac

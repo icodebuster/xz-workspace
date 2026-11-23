@@ -1,0 +1,78 @@
+# SonarQube Community Build (the free edition) for Axis, on this machine.
+#
+#   bin/sonar up       start it (first boot takes a minute or two)
+#   bin/sonar setup    one-off: admin password, project, analysis token
+#   bin/sonar scan     tests with coverage + RuboCop + Brakeman, then analyse
+#
+# The compose project name (axis-sonarqube) is the one the old copy in
+# Vendor/LaunchAssembly/Axis used, so this file runs the same server and keeps
+# every earlier analysis (they live in the Docker volumes, not in any folder).
+#
+# SonarQube keeps its own Postgres here, never the app's: its schema is
+# SonarQube's to migrate, and dropping the app's dev database must never
+# take the analysis history with it. Nothing listens beyond 127.0.0.1.
+
+name: axis-sonarqube
+
+services:
+  sonarqube:
+    # Pinned: an upgrade migrates the database and can't be rolled back, so
+    # move the tag on purpose (back up the db volume first). Tags:
+    # https://hub.docker.com/_/sonarqube/tags?name=community
+    image: sonarqube:26.9.0.129388-community
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      SONAR_JDBC_URL: jdbc:postgresql://db:5432/sonar
+      SONAR_JDBC_USERNAME: sonar
+      SONAR_JDBC_PASSWORD: sonar
+      # The embedded Elasticsearch refuses to boot when the Docker VM's
+      # vm.max_map_count is under 524288. Fine for a single-user local server.
+      SONAR_ES_BOOTSTRAP_CHECKS_DISABLE: "true"
+    ports:
+      - "127.0.0.1:${SONAR_PORT:-9000}:9000"
+    volumes:
+      - sonarqube_data:/opt/sonarqube/data
+      - sonarqube_extensions:/opt/sonarqube/extensions
+      - sonarqube_logs:/opt/sonarqube/logs
+    ulimits:
+      nofile:
+        soft: 131072
+        hard: 131072
+      nproc: 8192
+    healthcheck:
+      # The image has neither curl nor wget; bash's /dev/tcp asks instead.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/9000 && printf 'GET /api/system/status HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && grep -q '\"status\":\"UP\"' <&3"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+    restart: unless-stopped
+    networks: [sonarqube]
+
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: sonar
+      POSTGRES_PASSWORD: sonar
+      POSTGRES_DB: sonar
+    volumes:
+      - sonarqube_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sonar -d sonar"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+    networks: [sonarqube]
+
+networks:
+  sonarqube:
+    name: axis-sonarqube
+
+volumes:
+  sonarqube_data:
+  sonarqube_extensions:
+  sonarqube_logs:
+  sonarqube_db:

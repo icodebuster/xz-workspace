@@ -93,7 +93,9 @@ for old, new in [
     ('<td width="50%" valign="top" style="background-color:#ECFAF5; padding:16px 18px; border-radius:8px 0 0 8px;',
      '<td width="100%" align="center" valign="top" style="background-color:#ECFAF5; padding:16px 18px; border-radius:8px; text-align:center;'),
     ('<p style="margin:0;">Training on our new system, <strong>Axis</strong>, starts today. That gives us <strong>14 sleeps</strong> to get comfortable with it before it rolls out, so please jump in and have a look around.',
-     '<p style="margin:0;"><strong>The elves have been busy!</strong> Training on our new system, <strong>Axis</strong>, starts today. Jump in, unwrap it and get comfortable with it before it goes live.'),
+     '<p style="margin:0;">Training on our new system, <strong>Axis</strong>, starts today. Jump in, unwrap it and get comfortable with it before it goes live.'),
+    ("Santa's delivered our new system early this year.",
+     "Santa, Mrs Claus and the elves are working hard to deliver a New System for Christmas this year!"),
     ("Training starts today, Axis rolls out Mon 7 Dec. Click or scan to sign in.",
      "Axis training starts today. Click or scan to sign in."),
 ]:

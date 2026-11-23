@@ -21,7 +21,8 @@ HTML email announcing Axis training to the Xzibit team, styled with the Axis sys
 - Santa banner recoloured to navy.
 - Snowflakes in the footer forced to colour emoji (light blue), gold kept in the code.
 - "Rolling out Mon 7 December" card removed; the training card is full width and centred. Preview text no longer mentions 7 Dec.
-- Intro: "**The elves have been busy!** Training on our new system, **Axis**, starts today. Jump in, unwrap it and get comfortable with it before it goes live."
+- Header subtitle: "Santa, Mrs Claus and the elves are working hard to deliver a New System for Christmas this year!"
+- Intro: "Training on our new system, **Axis**, starts today. Jump in, unwrap it and get comfortable with it before it goes live."
 - Sign-off: "Santa's little Axis builders 🎄".
 
 ## Rebuild
